@@ -37,7 +37,7 @@ public class Controller {
 	public Vector3 QueryMove() {
 		Vector3 move = Vector3.zero;
 		if(InputHandler.GetKey(Forward)) {
-		move.z += 1f;
+			move.z += 1f;
 		}
 		if(InputHandler.GetKey(Back)) {
 			move.z -= 1f;

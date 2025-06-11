@@ -56,6 +56,8 @@ namespace CAMDM {
 
 		public Controller Controller;
 		private Actor Actor;
+		public int KeyFrameCount = 3;
+		private Actor[] Actor_KeyFrame;
 		public InertiaAlgorithm InertiaAlgorithm;
 		
 		// For evaluation
@@ -161,6 +163,15 @@ namespace CAMDM {
 
 		void Awake() {
 			Actor = GetComponent<Actor>();
+
+			// KeyFrameCount = 3;
+			Actor_KeyFrame = new Actor[KeyFrameCount];
+			Actor_KeyFrame[0] = GameObject.Find("ybot_keyframe").GetComponent<Actor>();
+			for (int i = 1; i < KeyFrameCount; i++)
+			{
+				Actor_KeyFrame[i] = Instantiate(Actor_KeyFrame[0]);
+			}
+			
 			InertiaAlgorithm = GetComponent<InertiaAlgorithm>();
 
 			from= new GameObject("MyTransform").transform;// HFTE建立局部坐标系时需要用到
@@ -518,12 +529,39 @@ namespace CAMDM {
 				{
 				    output = diffusionNetwork.Inference(past_motion, traj_pose, traj_trans,styleFeature, 1f);
 				}
+				
 				if(Show_inference_time)
 				{
 					inference_time= sw.ElapsedMilliseconds;
 					sw.Reset();
 				}
 				output.MakeReadable();
+				
+				
+				// 在角色前面x帧添加 关键帧
+				for (int frame_x = 0; frame_x < KeyFrameCount; frame_x++)
+				{
+					int frame_target = frame_x * 5;
+					for (int i = 0; i < Actor.Bones.Length-1; i++)
+                    {
+                    	if (i == 0)
+                    	{
+                    		Vector3 Actor_KeyFrame_Root_Pos =  new Vector3(-output[0,PelvisIndex,0,frame_target], output[0,PelvisIndex,1,frame_target], output[0,PelvisIndex,2,frame_target]) + base_trans;
+                    		Actor_KeyFrame[frame_x].Bones[0].Transform.position = Actor_KeyFrame_Root_Pos;
+                    	}
+                    	a1 = new Vector3(output[0,i,0,frame_target], output[0,i,1,frame_target], output[0,i,2,frame_target]);
+                    	a2 = new Vector3(output[0,i,3,frame_target], output[0,i,4,frame_target], output[0,i,5,frame_target]);
+                    	Matrix = Convert(a1, a2);
+                    	Quaternion Target_Rotation = MatrixToQuaternion(Matrix);
+                    	Actor_KeyFrame[frame_x].Bones[i].Transform.localRotation = Target_Rotation;
+                    }
+                    				
+				}
+				
+				// Actor_KeyFrame.Bones[PelvisIndex].Transform.position = new Vector3(Actor.Bones[0].Transform.position.x, 0f, Actor.Bones[0].Transform.position.z);
+
+				
+				
 				localAxisTransform.position =  new Vector3(-output[0,PelvisIndex,0,FuturePoints-1], 0f, output[0,PelvisIndex,2,FuturePoints-1]) + base_trans;
 				Vector3 unitVector = new Vector3(-(output[0,PelvisIndex,0,FuturePoints-1]-output[0,PelvisIndex,0,FuturePoints-2]), 0f, output[0,PelvisIndex,2,0]-output[0,PelvisIndex,2,FuturePoints-2]).normalized;
 				localAxisTransform.rotation = Quaternion.LookRotation(unitVector, Vector3.up);
@@ -682,9 +720,9 @@ namespace CAMDM {
 
 			if(Show_hand_trajectory)
 			{
-			Trajectory_right_hand.Points[99].SetPosition(Actor.Bones[10].Transform.position);
-			Trajectory_left_hand.Points[99].SetPosition(Actor.Bones[14].Transform.position);
-			Trajectory_root.Points[99].SetPosition(Actor.Bones[23].Transform.position);
+				Trajectory_right_hand.Points[99].SetPosition(Actor.Bones[10].Transform.position);
+				Trajectory_left_hand.Points[99].SetPosition(Actor.Bones[14].Transform.position);
+				Trajectory_root.Points[99].SetPosition(Actor.Bones[23].Transform.position);
 			}
 
 			Trajectory.Points[RootPointIndex].SetDirection(new Vector3(Actor.Bones[0].Transform.forward.x,0,Actor.Bones[0].Transform.forward.z).normalized);
@@ -958,8 +996,10 @@ namespace CAMDM {
 					}
 
 					if(Target.Inspect) {
-						using(new EditorGUILayout.VerticalScope ("Box")) {
-							Target.modelPath = (ModelAsset)EditorGUILayout.ObjectField("Model Path", Target.modelPath, typeof(ModelAsset), false);
+						using(new EditorGUILayout.VerticalScope ("Box"))
+						{
+							Target.modelPath = (ModelAsset)EditorGUILayout.ObjectField("Model Path", Target.modelPath,
+								typeof(ModelAsset), false);
 							Target.modelConfig = (TextAsset)EditorGUILayout.ObjectField("Model Config", Target.modelConfig, typeof(TextAsset), false);
 							Target.conditionConfig = (TextAsset)EditorGUILayout.ObjectField("Condition Config", Target.conditionConfig, typeof(TextAsset), false);
 							Target.device = (BackendType)EditorGUILayout.EnumPopup("Device Type", Target.device);
@@ -969,6 +1009,7 @@ namespace CAMDM {
 							Target.ShowInformation = EditorGUILayout.Toggle("ShowInformation", Target.ShowInformation);
 							Target.Show_inference_time = EditorGUILayout.Toggle("Show_inference_time", Target.Show_inference_time);
 							Target.CFG_weight = EditorGUILayout.Slider("CFG_weight", Target.CFG_weight, 0f, 2.5f);
+							Target.KeyFrameCount = EditorGUILayout.IntSlider("KeyFrameCount", Target.KeyFrameCount, 3, 7);
 							Target.CFGcount_cache =EditorGUILayout.IntField("CFG_count", Target.CFGcount_cache);
 							Target.SprintTarget_speed = EditorGUILayout.Slider("Target sprint speed", Target.SprintTarget_speed, 0f, 4f);
 							Target.WalkTarget_speed = EditorGUILayout.Slider("Target walk speed", Target.WalkTarget_speed, 0f, 4f);
