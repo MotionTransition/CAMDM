@@ -71,10 +71,12 @@ if __name__ == "__main__":
     cond['past_motion'] = cond['past_motion'].permute(0, 2, 3, 1) # [bs, joint_num, joint_feat, past_frames]
     cond['traj_pose'] = cond['traj_pose'].permute(0, 2, 1) # [bs, 6, frame_num//2]
     cond['traj_trans'] = cond['traj_trans'].permute(0, 2, 1) # [bs, 2, frame_num//2]
+    cond['keyframe_start'] = cond['keyframe_start'].unsqueeze(dim = 3) # [bs, joint_num, joint_feat, 1]
+    cond['keyframe_end'] = cond['keyframe_end'].unsqueeze(dim = 3) # [bs, joint_num, joint_feat, 1]
     
     # define input and output names for onnx model
-    input_tuple = (x_start, torch.tensor([0]*1), cond['past_motion'], cond['traj_pose'], cond['traj_trans'], cond['style_idx'])
-    input_names = ['input_x', 'time_steps', 'past_motion', 'traj_pose', 'traj_trans', 'style_idx'] 
+    input_tuple = (x_start, torch.tensor([0]*1), cond['keyframe_start'], cond['keyframe_end'], cond['past_motion'], cond['style_idx'], cond['tta'])
+    input_names = ['input_x', 'time_steps', 'start_motion', 'end_motion', 'past_motion', 'style_idx', 'tta']
     output_names = ['output']
     
     results = model(*input_tuple)

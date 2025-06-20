@@ -42,6 +42,10 @@ Library/AssetStore*
 .vscode/*
 *.code-workspace
 # Python
+*/nohup.out
+/PyTorch/data/*
+!/PyTorch/data/*.py
+/PyTorch/save/
 __pycache__/
 *.py[cod]
 *.pyo

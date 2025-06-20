@@ -35,6 +35,7 @@ class MotionDiffusion(nn.Module):
         self.past_motion_process = MotionProcess(self.input_feats, self.latent_dim)
         self.traj_trans_process = TrajProcess(2, self.latent_dim)
         self.traj_pose_process = TrajProcess(6, self.latent_dim)
+        self.tta_process = TimeToArrivalProcess(45, self.latent_dim)
         self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
 
         # global conditions
@@ -71,21 +72,28 @@ class MotionDiffusion(nn.Module):
         self.output_process = OutputProcess(self.input_feats, self.latent_dim, self.njoints, self.nfeats)
 
 
-    def forward(self, x, timesteps, past_motion, traj_pose, traj_trans, style_idx):
+    def forward(self, x, timesteps, start_motion, end_motion, past_motion, style_idx, tta):
         bs, njoints, nfeats, nframes = x.shape
         
+        # in-between args:
+        start_emb = self.future_motion_process(start_motion)
+        end_emb = self.future_motion_process(end_motion) 
+        tta_emb = self.tta_process(tta).unsqueeze(0)
+
         time_emb = self.embed_timestep(timesteps)  # [1, bs, L]
         style_emb = self.embed_style(style_idx).unsqueeze(0)  # [1, bs, L]
-        traj_trans_emb = self.traj_trans_process(traj_trans) # [N/2, bs, L] 
-        traj_pose_emb = self.traj_pose_process(traj_pose) # [N/2, bs, L] 
+        # traj_trans_emb = self.traj_trans_process(traj_trans) # [N/2, bs, L] 
+        # traj_pose_emb = self.traj_pose_process(traj_pose) # [N/2, bs, L] 
         past_motion_emb = self.past_motion_process(past_motion)  # [past_frames, bs, L] 
         
-        future_motion_emb = self.future_motion_process(x) 
+        future_motion_emb = self.future_motion_process(x)
         
-        xseq = torch.cat((time_emb, style_emb, 
-                          traj_trans_emb, traj_pose_emb,
-                          past_motion_emb, future_motion_emb), axis=0)
+        # xseq = torch.cat((time_emb, style_emb, 
+        #                   traj_trans_emb, traj_pose_emb,
+        #                   past_motion_emb, future_motion_emb), axis=0)
         
+        xseq = torch.cat((time_emb, style_emb, past_motion_emb, start_emb, end_emb, future_motion_emb, tta_emb), axis = 0)
+
         xseq = self.sequence_pos_encoder(xseq)
         output = self.seqEncoder(xseq)[-nframes:] 
         output = self.output_process(output)  
@@ -104,12 +112,15 @@ class MotionDiffusion(nn.Module):
         past_motion = y['past_motion']
         traj_pose = y['traj_pose']
         traj_trans = y['traj_trans']
+        start_motion = y['keyframe_start']
+        end_motion = y['keyframe_end']
+        tta = y['tta']
         
         # CFG on past motion
         keep_batch_idx = torch.rand(bs, device=past_motion.device) < (1-self.cond_mask_prob)
         past_motion = past_motion * keep_batch_idx.view((bs, 1, 1, 1))
         
-        return self.forward(x, timesteps, past_motion, traj_pose, traj_trans, style_idx)
+        return self.forward(x, timesteps, start_motion, end_motion, past_motion, style_idx, tta)
     
 
 class MotionProcess(nn.Module):
@@ -138,6 +149,23 @@ class TrajProcess(nn.Module):
         x = x.permute((2, 0, 1))
         x = self.poseEmbedding(x)  
         return x
+    
+
+class TimeToArrivalProcess(nn.Module): # Time to Arrival Embedding
+    def __init__(self, input_feats, latent_dim):
+        super().__init__()
+        self.input_feats = input_feats
+        self.latent_dim = latent_dim
+        self.ttaEmbedding = nn.Sequential(
+            nn.Linear(self.input_feats, self.latent_dim),
+            nn.SiLU(),  # 或 ReLU / GELU / Tanh
+            nn.Linear(self.latent_dim, self.latent_dim)
+        )
+
+    def forward(self, x):
+        # [5, 4, 3, 2, 1]
+        x = self.ttaEmbedding(x)
+        return x
 
 
 class PositionalEncoding(nn.Module):
@@ -158,6 +186,24 @@ class PositionalEncoding(nn.Module):
         # not used in the final model
         x = x + self.pe[:x.shape[0], :]
         return self.dropout(x)
+
+
+
+class TTAEmbedder(nn.Module):
+    def __init__(self, latent_dim, max_len=5000, dropout=0.1):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.tta_encoding = TimeToArrivalProcess(latent_dim, dropout, max_len)
+
+        self.time_embed = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim),
+            nn.SiLU(),
+            nn.Linear(latent_dim, latent_dim),
+        )
+
+    def forward(self, tta):
+        return self.tta_encoding(self.time_embed(tta))
+
 
 
 class TimestepEmbedder(nn.Module):

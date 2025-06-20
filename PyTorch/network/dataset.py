@@ -35,6 +35,7 @@ class MotionDataset(Dataset):
         self.T_pose = data_source['T_pose']
         frame_nums = []
         item_frame_indices_list = [] # store the frame index for each clip. shape = 1 + window_size, 1 represent the motion idx
+        key_frame_indices_list = [] # store the key frame index for each clip.
         motion_idx = 0
         for motion_item in tqdm(data_source['motions'][:limited_num]):
             frame_num = motion_item['local_joint_rotations'].shape[0]
@@ -50,11 +51,19 @@ class MotionDataset(Dataset):
             self.global_conds['style'].append(motion_item['style'])
 
             clip_indices = np.arange(0, frame_num - window_size + 1, offset_frame)[:, None] + np.arange(window_size)
-            clip_indices_with_idx = np.hstack((np.full((len(clip_indices), 1), motion_idx, dtype=clip_indices.dtype), clip_indices))            
+            clip_indices_with_idx = np.hstack((np.full((len(clip_indices), 1), motion_idx, dtype=clip_indices.dtype), clip_indices))
             item_frame_indices_list.append(clip_indices_with_idx)
+            
+            # start_indices_with_idx = clip_indices_with_idx[:, 1]
+            # end_indices_with_idx = clip_indices_with_idx[:, -1]
+            # key_frame_indices_with_idx = clip_indices_with_idx[:, [0, 1, -1]]
+            # key_frame_indices_list.append(key_frame_indices_with_idx)
+
             motion_idx += 1
             
         self.item_frame_indices = np.concatenate(item_frame_indices_list, axis=0)
+        # self.key_frame_indices = np.concatenate(key_frame_indices_list, axis=0)
+        self.keyframe_indices = self.item_frame_indices[:, [0, 1, -1]]
     
         self.joint_num, self.per_rot_feat = self.rotations_list[0].shape[-2], self.rot_feat_dim[rot_req]
         self.traj_aug_indexs1 = list(range(self.local_conds['traj_pose'][0].shape[0]))
@@ -69,12 +78,18 @@ class MotionDataset(Dataset):
     
     def __getitem__(self, idx):
         item_frame_indice = self.item_frame_indices[idx]
+        # keyframe_indice = self.keyframe_indices[idx]
+
         motion_idx, frame_indices = item_frame_indice[0], item_frame_indice[1:]
+        # keyframe_start, keyframe_end = keyframe_indice[1], keyframe_indice[-1]
         
         rotations = self.rotations_list[motion_idx][frame_indices].copy()
         root_pos = self.root_pos_list[motion_idx][frame_indices].copy()
         root_pos[:, [0, 2]] -= root_pos[self.reference_frame_idx-1:self.reference_frame_idx, [0, 2]]
         traj_rotation = self.local_conds['traj_pose'][motion_idx][random.choice(self.traj_aug_indexs1), frame_indices].copy()
+
+
+        tta = np.arange(44, -1, -1, dtype =np.float32)
 
         traj_pos = root_pos[:, [0, 2]].copy()
         random_option = np.random.random()
@@ -112,6 +127,8 @@ class MotionDataset(Dataset):
         
         future_motion = rotations_with_root[self.reference_frame_idx:]
         past_motion = rotations_with_root[:self.reference_frame_idx]
+
+        keyframe_start_motion, keyframe_end_motion = future_motion[0], future_motion[-1]
     
         style_idx = float(self.style_set.index(self.global_conds['style'][motion_idx]))
         
@@ -123,7 +140,10 @@ class MotionDataset(Dataset):
                 'traj_trans': traj_pos,
                 'style': self.global_conds['style'][motion_idx],
                 'style_idx': style_idx,
-                'mask': self.mask
+                'mask': self.mask,
+                'keyframe_start': keyframe_start_motion,
+                'keyframe_end': keyframe_end_motion,
+                'tta': tta
             }
         }     
 
