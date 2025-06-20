@@ -6,6 +6,10 @@
 Thumbs.db
 Icon?
 # Unity
+/Unity/Assets/Demo/CAMDM/checkpoints/*
+!/Unity/Assets/Demo/CAMDM/checkpoints/epoch_20&40/*
+!/Unity/Assets/Demo/CAMDM/checkpoints/onnx_camdm_512_100style_best/*
+!/Unity/Assets/Demo/CAMDM/checkpoints/onnx_camdm_wt_fc_100style_best/*
 [Ll]ibrary/
 [Tt]emp/
 [Oo]bj/
