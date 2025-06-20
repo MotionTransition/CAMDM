@@ -24,10 +24,12 @@ namespace CAMDM {
 	public class BioAnimation : MonoBehaviour
 	{
 		public ModelAsset modelPath;
+		public ModelAsset inBetweenModelPath;
 		public TextAsset modelConfig;
 		public TextAsset conditionConfig;
 		public BackendType device = BackendType.GPUCompute;
 		public DiffusionNetwork diffusionNetwork;
+		public InBetweenNetwork inBetweenNetwork;
 		
 		private Quaternion traj_pose_quaterniaon;
 		private float[] traj_pose_6D;
@@ -56,6 +58,16 @@ namespace CAMDM {
 
 		public Controller Controller;
 		private Actor Actor;
+<<<<<<< Updated upstream
+=======
+		public int ActorVisCount = 3;
+		private Actor ActorKeyFrame;
+		private Actor[] ActorProcess;
+		private Actor[] ActorProcessInBetween;
+		public bool VisActorKeyFrame = true;
+		public bool VisActorProcess = true;
+		public bool VisActorProcessInBetween = true;
+>>>>>>> Stashed changes
 		public InertiaAlgorithm InertiaAlgorithm;
 		
 		// For evaluation
@@ -96,6 +108,7 @@ namespace CAMDM {
         private TensorFloat traj_pose; 
 		private TensorFloat traj_trans;
 		private TensorFloat output;
+		private TensorFloat output_inBetween;
 		private TensorFloat styleFeature = TensorFloat.Zeros(new TensorShape(1));
 		
         
@@ -161,6 +174,51 @@ namespace CAMDM {
 
 		void Awake() {
 			Actor = GetComponent<Actor>();
+<<<<<<< Updated upstream
+=======
+
+			if (VisActorKeyFrame)
+			{
+				ActorKeyFrame = GetComponent<Actor>();
+				ActorKeyFrame = GameObject.Find("ybot_keyframe").GetComponent<Actor>();
+			}
+			else
+			{
+				var ybot_keyframe = GameObject.Find("ybot_keyframe");
+				Destroy(ybot_keyframe);
+			}
+
+			if (VisActorProcess)
+			{
+				ActorProcess = new Actor[ActorVisCount];
+                ActorProcess[0] = GameObject.Find("ybot_process").GetComponent<Actor>();
+                for (int i = 1; i < ActorVisCount; i++)
+                {
+                	ActorProcess[i] = Instantiate(ActorProcess[0]);
+                }
+			}
+			else
+			{
+				var ybot_process = GameObject.Find("ybot_process");
+				Destroy(ybot_process);
+			}
+
+			if (VisActorProcessInBetween)
+			{
+				ActorProcessInBetween = new Actor[ActorVisCount];
+				ActorProcessInBetween[0] = GameObject.Find("ybot_process_in_between").GetComponent<Actor>();
+				for (int i = 1; i < ActorVisCount; i++)
+				{
+					ActorProcessInBetween[i] = Instantiate(ActorProcessInBetween[0]);
+				}
+			}
+			else
+			{
+				var ybot_process_in_between = GameObject.Find("ybot_process_in_between");
+				Destroy(ybot_process_in_between);
+			}
+			
+>>>>>>> Stashed changes
 			InertiaAlgorithm = GetComponent<InertiaAlgorithm>();
 
 			from= new GameObject("MyTransform").transform;// HFTE建立局部坐标系时需要用到
@@ -190,9 +248,14 @@ namespace CAMDM {
 			traj_pose = TensorFloat.Zeros(new TensorShape(1, 6, FuturePoints)); 
 			traj_trans = TensorFloat.Zeros(new TensorShape(1, 2,FuturePoints)); 
 			output = TensorFloat.Zeros(new TensorShape(1, Actor.Bones.Length, 6, FuturePoints));
+			output_inBetween = TensorFloat.Zeros(new TensorShape(1, Actor.Bones.Length, 6, FuturePoints));
 			
 			diffusionNetwork = new DiffusionNetwork();
 			diffusionNetwork.CreateSession(modelPath, device, modelConfig, conditionConfig);
+			
+			inBetweenNetwork = new InBetweenNetwork();
+			inBetweenNetwork.CreateSession(inBetweenModelPath, device, modelConfig, conditionConfig);
+			
 			styleList = diffusionNetwork.styles;
 			
 			PelvisIndex = Actor.Bones.Length - 1;
@@ -504,6 +567,7 @@ namespace CAMDM {
 			styleFeature[0] = (float)CurrentStyleIdx;
 			if(frame==0)
 			{
+				output_inBetween.Dispose();
 				output.Dispose();
 				if(Show_inference_time)
 				{
@@ -518,12 +582,148 @@ namespace CAMDM {
 				{
 				    output = diffusionNetwork.Inference(past_motion, traj_pose, traj_trans,styleFeature, 1f);
 				}
+<<<<<<< Updated upstream
+=======
+				
+				// in-between: set start_motion & end_motion
+				int[] out_shape = output.shape.ToArray(); // int array ( 1, 26, 6, 45 )
+				TensorFloat start_motion = TensorFloat.Zeros(new TensorShape(out_shape[0], out_shape[1], out_shape[2], 1));
+				TensorFloat end_motion = TensorFloat.Zeros(new TensorShape(out_shape[0], out_shape[1], out_shape[2], 1));
+				
+				// set start_motion & end_motion
+				for (int i = 0; i < Actor.Bones.Length; i++)
+				{
+					for (int j = 0; j < 6; j++)
+					{
+						start_motion[0, i, j, 0] = output[0, i, j, 0];
+						end_motion[0, i, j, 0] = output[0, i, j, 44];
+					}
+				}
+				
+				// time to arrival embedding
+				TensorFloat tta = TensorFloat.Zeros(new TensorShape(1, 45));
+				for (int i = 0; i < 45; i++)
+				{
+					tta[0, i] = 44 - i;
+				}
+				
+				// 关键帧可视化条件
+				int ActorVisGap = FuturePoints / ActorVisCount;
+				
+				// keyframe 可视化
+				// 在角色第45帧添加关键帧
+				if (VisActorKeyFrame)
+				{
+					int keyframe = 44;
+					for (int i = 0; i < Actor.Bones.Length-1; i++)
+					{
+						if (i == 0)
+						{
+							Vector3 Actor_KeyFrame_Root_Pos =  new Vector3(-output[0,PelvisIndex,0,keyframe], output[0,PelvisIndex,1,keyframe], output[0,PelvisIndex,2,keyframe]) + base_trans;
+							ActorKeyFrame.Bones[0].Transform.position = Actor_KeyFrame_Root_Pos;
+						}
+						a1 = new Vector3(output[0,i,0,keyframe], output[0,i,1,keyframe], output[0,i,2,keyframe]);
+						a2 = new Vector3(output[0,i,3,keyframe], output[0,i,4,keyframe], output[0,i,5,keyframe]);
+						Matrix = Convert(a1, a2);
+						Quaternion Target_Rotation = MatrixToQuaternion(Matrix);
+						ActorKeyFrame.Bones[i].Transform.localRotation = Target_Rotation;
+					}
+				}
+				
+				// output 可视化
+				// 实时地在角色前面x帧添加关键帧
+				if (VisActorProcess)
+				{
+					for (int frame_x = 0; frame_x < ActorVisCount; frame_x++)
+					{
+						int frame_target = (FuturePoints - 1) - frame_x * ActorVisGap;
+						if (frame_target > 44 || frame_target < 1)
+							break;
+						for (int i = 0; i < Actor.Bones.Length - 1; i++)
+						{
+
+							if (i == 0)
+							{
+								Vector3 Actor_KeyFrame_Root_Pos = new Vector3(-output[0, PelvisIndex, 0, frame_target],
+									                                  output[0, PelvisIndex, 1, frame_target],
+									                                  output[0, PelvisIndex, 2, frame_target]) +
+								                                  base_trans;
+								ActorProcess[frame_x].Bones[0].Transform.position = Actor_KeyFrame_Root_Pos;
+							}
+
+							a1 = new Vector3(output[0, i, 0, frame_target], output[0, i, 1, frame_target],
+								output[0, i, 2, frame_target]);
+							a2 = new Vector3(output[0, i, 3, frame_target], output[0, i, 4, frame_target],
+								output[0, i, 5, frame_target]);
+							Matrix = Convert(a1, a2);
+							Quaternion Target_Rotation = MatrixToQuaternion(Matrix);
+							ActorProcess[frame_x].Bones[i].Transform.localRotation = Target_Rotation;
+						}
+					}
+				}
+
+				output_inBetween = inBetweenNetwork.Inference(past_motion, start_motion, end_motion, styleFeature, tta, CFG_weight);
+				
+				
+				// in between output 可视化
+				// 实时地在角色前面x帧添加关键帧
+				if (VisActorProcessInBetween)
+				{
+					for (int frame_x = 0; frame_x < ActorVisCount; frame_x++)
+					{
+						int frame_target = (FuturePoints - 1) - frame_x * ActorVisGap;
+						if (frame_target > 44 || frame_target < 1)
+							break;
+						for (int i = 0; i < Actor.Bones.Length - 1; i++)
+						{
+
+							if (i == 0)
+							{
+								Vector3 Actor_KeyFrame_Root_Pos = new Vector3(
+									                                  -output_inBetween[0, PelvisIndex, 0,
+										                                  frame_target],
+									                                  output_inBetween[0, PelvisIndex, 1, frame_target],
+									                                  output_inBetween[0, PelvisIndex, 2,
+										                                  frame_target]) +
+								                                  base_trans;
+								ActorProcessInBetween[frame_x].Bones[0].Transform.position = Actor_KeyFrame_Root_Pos;
+							}
+
+							a1 = new Vector3(output_inBetween[0, i, 0, frame_target],
+								output_inBetween[0, i, 1, frame_target],
+								output_inBetween[0, i, 2, frame_target]);
+							a2 = new Vector3(output_inBetween[0, i, 3, frame_target],
+								output_inBetween[0, i, 4, frame_target],
+								output_inBetween[0, i, 5, frame_target]);
+							Matrix = Convert(a1, a2);
+							Quaternion Target_Rotation = MatrixToQuaternion(Matrix);
+							ActorProcessInBetween[frame_x].Bones[i].Transform.localRotation = Target_Rotation;
+						}
+					}
+				}
+
+
+>>>>>>> Stashed changes
 				if(Show_inference_time)
 				{
 					inference_time= sw.ElapsedMilliseconds;
 					sw.Reset();
 				}
 				output.MakeReadable();
+<<<<<<< Updated upstream
+=======
+				output_inBetween.MakeReadable();
+				output = output_inBetween;
+				
+
+				
+
+				
+				// Actor_KeyFrame.Bones[PelvisIndex].Transform.position = new Vector3(Actor.Bones[0].Transform.position.x, 0f, Actor.Bones[0].Transform.position.z);
+
+				
+				
+>>>>>>> Stashed changes
 				localAxisTransform.position =  new Vector3(-output[0,PelvisIndex,0,FuturePoints-1], 0f, output[0,PelvisIndex,2,FuturePoints-1]) + base_trans;
 				Vector3 unitVector = new Vector3(-(output[0,PelvisIndex,0,FuturePoints-1]-output[0,PelvisIndex,0,FuturePoints-2]), 0f, output[0,PelvisIndex,2,0]-output[0,PelvisIndex,2,FuturePoints-2]).normalized;
 				localAxisTransform.rotation = Quaternion.LookRotation(unitVector, Vector3.up);
@@ -958,8 +1158,17 @@ namespace CAMDM {
 					}
 
 					if(Target.Inspect) {
+<<<<<<< Updated upstream
 						using(new EditorGUILayout.VerticalScope ("Box")) {
 							Target.modelPath = (ModelAsset)EditorGUILayout.ObjectField("Model Path", Target.modelPath, typeof(ModelAsset), false);
+=======
+						using(new EditorGUILayout.VerticalScope ("Box"))
+						{
+							Target.modelPath = (ModelAsset)EditorGUILayout.ObjectField("Model Path", Target.modelPath,
+								typeof(ModelAsset), false);
+							Target.inBetweenModelPath = (ModelAsset)EditorGUILayout.ObjectField("In-Between Model Path", Target.inBetweenModelPath,
+								typeof(ModelAsset), false);
+>>>>>>> Stashed changes
 							Target.modelConfig = (TextAsset)EditorGUILayout.ObjectField("Model Config", Target.modelConfig, typeof(TextAsset), false);
 							Target.conditionConfig = (TextAsset)EditorGUILayout.ObjectField("Condition Config", Target.conditionConfig, typeof(TextAsset), false);
 							Target.device = (BackendType)EditorGUILayout.EnumPopup("Device Type", Target.device);
@@ -969,6 +1178,13 @@ namespace CAMDM {
 							Target.ShowInformation = EditorGUILayout.Toggle("ShowInformation", Target.ShowInformation);
 							Target.Show_inference_time = EditorGUILayout.Toggle("Show_inference_time", Target.Show_inference_time);
 							Target.CFG_weight = EditorGUILayout.Slider("CFG_weight", Target.CFG_weight, 0f, 2.5f);
+<<<<<<< Updated upstream
+=======
+							Target.ActorVisCount = EditorGUILayout.IntSlider("ActorVisCount", Target.ActorVisCount, 1, 20);
+							Target.VisActorKeyFrame = EditorGUILayout.Toggle("VisActorKeyFrame", Target.VisActorKeyFrame);
+							Target.VisActorProcess = EditorGUILayout.Toggle("VisActorProcess", Target.VisActorProcess);
+							Target.VisActorProcessInBetween = EditorGUILayout.Toggle("VisActorProcessInBetween", Target.VisActorProcessInBetween);
+>>>>>>> Stashed changes
 							Target.CFGcount_cache =EditorGUILayout.IntField("CFG_count", Target.CFGcount_cache);
 							Target.SprintTarget_speed = EditorGUILayout.Slider("Target sprint speed", Target.SprintTarget_speed, 0f, 4f);
 							Target.WalkTarget_speed = EditorGUILayout.Slider("Target walk speed", Target.WalkTarget_speed, 0f, 4f);
@@ -1007,10 +1223,12 @@ namespace CAMDM {
 		public void OnDestroy()
 		{
 			diffusionNetwork.Dispose();
+			inBetweenNetwork.Dispose();
 			past_motion.Dispose();
 			traj_pose.Dispose();
 			traj_trans.Dispose();
 			output.Dispose();
+			output_inBetween.Dispose();
 			if (ExportWriter != null)
 			{
 				ExportWriter.Close();
